@@ -1,7 +1,6 @@
-from ast import operator
 from app import constants
 from rest_framework import serializers
-from app.models import Otp, Users
+from app.models import Users
 
 
 class UserSerializer(serializers.ModelSerializer):
@@ -29,12 +28,6 @@ class SignupSerializer(serializers.Serializer):
         return data
 
 
-class LoginSerializer(serializers.Serializer):
-    phone_number = serializers.CharField(max_length=20, allow_null=True, required=False)
-    email = serializers.EmailField(required=False, allow_null=True)
-    password = serializers.CharField(max_length=256)
-
-
 class SendOtpSerializer(serializers.Serializer):
     operation_type = serializers.CharField(max_length=128)
     phone_number = serializers.CharField(required=False, max_length=20, allow_null=True)
@@ -49,14 +42,19 @@ class SendOtpSerializer(serializers.Serializer):
             constants.SIGN_IN_EMAIL,
             constants.SIGN_IN_PHONE,
             constants.FORGOT_PASSWORD_PHONE,
-            constants.FORGOT_PASSWORD_EMAIL
+            constants.FORGOT_PASSWORD_EMAIL,
+            constants.LOGIN_WITH_OTP,
+            constants.LOGIN_WITH_PASSWORD
         ):
             raise serializers.ValidationError(constants.INVALID_OPERATION_TYPE)
 
         if operation_type in (constants.SIGN_IN_EMAIL, constants.FORGOT_PASSWORD_EMAIL) and not email:
             raise serializers.ValidationError(constants.EMAIL_MANDATORY)
 
-        if operation_type in (constants.SIGN_IN_PHONE, constants.FORGOT_PASSWORD_PHONE) and not phone_number:
+        if (
+            operation_type in (constants.SIGN_IN_PHONE, constants.FORGOT_PASSWORD_PHONE, constants.LOGIN_WITH_OTP)
+            and not phone_number
+        ):
             raise serializers.ValidationError(constants.PHONE_MANDATORY)
 
         if phone_number and operation_type == constants.SIGN_IN_PHONE:
@@ -82,6 +80,25 @@ class ValidateOtpSerializer(SendOtpSerializer, SignupSerializer):
         if not attrs.get("email"):
             raise serializers.ValidationError(constants.EMAIL_MANDATORY)
 
+        return super().validate(attrs)
+
+
+class LoginSerializer(SendOtpSerializer):
+    password = serializers.CharField(max_length=256, required=False, allow_null=True)
+    otp = serializers.IntegerField(required=False, allow_null=True)
+
+    def validate(self, attrs):
+        operation_type = attrs.get("operation_type")
+        if operation_type == constants.LOGIN_WITH_OTP:
+            if not attrs.get("otp") or not attrs.get("phone_number"):
+                raise serializers.ValidationError(constants.PHONE_NUMBER_OR_OTP_NOT_PROVIDED)
+        elif operation_type == constants.LOGIN_WITH_PASSWORD:
+            if not attrs.get("password"):
+                raise serializers.ValidationError(constants.PASSWORD_NOT_PROVIDED)
+            if not attrs.get("phone_number") and not attrs.get("email"):
+                raise serializers.ValidationError(constants.PHONE_OR_EMAIL_NOT_PROVIDED)
+        else:
+            raise serializers.ValidationError(constants.INVALID_OPERATION_TYPE)
         return super().validate(attrs)
 
 

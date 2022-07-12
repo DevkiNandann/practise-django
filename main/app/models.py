@@ -37,4 +37,4 @@ class Otp(models.Model):
     is_verified = models.BooleanField(default=False)
     otp_type = models.CharField(max_length=128, choices=OtpType.choices)
     created_at = models.DateTimeField(default=datetime.now)
-    updated_at = models.DateTimeField(null=True)
+    updated_at = models.DateTimeField(null=True, auto_now=True)

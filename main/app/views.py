@@ -69,6 +69,15 @@ class SendOtp(APIView):
                     message=constants.FORGOT_PASSWORD_MAIL_MESSAGE.format(otp)
                 )
 
+            elif operation_type == constants.LOGIN_WITH_OTP:
+                Otp.objects.create(
+                    phone_number=phone_number,
+                    otp=otp,
+                    otp_type=Otp.OtpType.LOGIN
+                )
+                client = helpers.MessageClient()
+                client.send_message(otp, phone_number)
+
             else:
                 Otp.objects.create(
                     email=email,
@@ -126,9 +135,15 @@ class ValidateOtp(APIView):
                 phone_number=phone_number
             )
 
-        else:
+        elif operation_type == constants.SIGN_IN_EMAIL:
             check_otp = check_otp.filter(
                 email=email
+            )
+
+        else:
+            return Response(
+                data = {"error": constants.INVALID_OPERATION_TYPE},
+                status=status.HTTP_400_BAD_REQUEST,
             )
 
         if not check_otp.exists():
@@ -181,22 +196,50 @@ class Login(APIView):
         phone_number = serializer.validated_data.get("phone_number")
         email = serializer.validated_data.get("email")
         password = serializer.validated_data.get("password")
+        otp_code = serializer.validated_data.get("otp")
+        operation_type = serializer.validated_data.get("operation_type")
 
-        user = Users.objects.filter(
-            Q(phone_number=phone_number) | Q(email=email)
-        )
-        if not user.exists():
-            return Response(
-                data = {"error": constants.USER_DOES_NOT_EXISTS},
-                status=status.HTTP_400_BAD_REQUEST,
+        if operation_type == constants.LOGIN_WITH_OTP:
+            check_otp_qs = Otp.objects.filter(
+                otp=otp_code,
+                otp_type=Otp.OtpType.LOGIN,
+                is_verified=False,
+                phone_number=phone_number
             )
+            if not check_otp_qs.exists():
+                return Response(
+                    data = {"error": constants.RECORD_NOT_FOUND},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
 
-        user = user.first()
-        if not check_password(password, user.password):
-            return Response(
-                data = {"error": constants.INCORRECT_PASSWORD},
-                status = status.HTTP_400_BAD_REQUEST
+            user = Users.objects.filter(phone_number=phone_number)
+            if not user.exists():
+                return Response(
+                    data = {"error": constants.USER_DOES_NOT_EXISTS},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            user = user.first()
+            check_otp = check_otp_qs.first()
+            check_otp.is_verified = True
+            check_otp.save()
+
+        else:
+            user = Users.objects.filter(
+                Q(phone_number=phone_number) | Q(email=email)
             )
+            if not user.exists():
+                return Response(
+                    data = {"error": constants.USER_DOES_NOT_EXISTS},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            user = user.first()
+            if not check_password(password, user.password):
+                return Response(
+                    data = {"error": constants.INCORRECT_PASSWORD},
+                    status = status.HTTP_400_BAD_REQUEST
+                )
 
         try:
             # creating a new token or getting it if already exists for a user
@@ -327,8 +370,7 @@ class ForgotPassword(APIView):
 
             return Response(
                 data = {
-                    "message": constants.USER_UPDATED,
-                    "user": UserSerializer(request.data).data,
+                    "message": constants.USER_UPDATED
                 },
                 status=status.HTTP_201_CREATED
             )
